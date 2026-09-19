@@ -1,0 +1,16 @@
+{
+  "name": "Dmei-Kiss",
+  "short_name": "Dmei-Kiss",
+  "description": "Tick what you did. Watch it add up until payday.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F3F5FA",
+  "theme_color": "#FF9A1E",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

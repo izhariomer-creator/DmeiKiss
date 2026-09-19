@@ -1,0 +1,18 @@
+rules_version = '2';
+// Dmei-Kiss. The app has no sign in, so the database is open to anyone
+// holding the URL. Same shape as a family whiteboard: fine for pocket
+// money, not for anything sensitive. Keep the Pages URL private.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /config/{doc}    { allow read, write: if true; }
+    match /ledger/{kid}    { allow read, write: if true; }
+    match /payments/{id}   { allow read, write: if true; }
+    match /photos/{id}     { allow read, write: if true; }
+    match /people/{id}     { allow read, write: if true; }
+    match /avatars/{id}    { allow read, write: if true; }
+    match /sugs/{id}       { allow read, write: if true; }
+
+    match /{document=**}   { allow read, write: if false; }
+  }
+}
