@@ -355,6 +355,21 @@ a.btn{text-decoration:none}
 @keyframes pop{from{transform:translateX(-50%) translateY(14px) scale(.9);opacity:0}}
 .foot{font-size:12.5px;color:var(--faint);text-align:center;margin-top:22px;line-height:1.55}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}}
+.t .mon{display:block;font-size:11.5px;color:var(--dim);margin-top:3px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t .mon:empty{display:none}
+.t .mon b{color:var(--good);font-weight:800}
+.t .mon .chip{margin:0 5px 0 0;vertical-align:1px}
+.gold p.gmon{font-weight:650;color:#7A4A00}
+.gold p.gmon:empty{display:none}
+.chip.once{background:#EEE8FF;color:#5B3FD6}
+.chip.only{background:#DDF6F1;color:#087f6e}
+.chip.done{background:var(--soft);color:var(--dim)}
+.sh .n small{font-size:11px;font-weight:600;opacity:.7;margin-left:3px}
+.peek{display:flex;align-items:center;gap:10px;margin:4px 0 14px;padding:11px 12px 11px 15px;border-radius:16px;
+  background:var(--ink);color:#fff;font-size:13.5px;font-weight:600}
+.peek button{margin-left:auto;background:#fff;color:var(--ink);padding:8px 13px;border-radius:99px;font-weight:700;font-size:13px;flex:none}
+.edt{width:40px;flex:none;display:grid;place-items:center;color:var(--faint);font-size:17px;pointer-events:none}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:15px;letter-spacing:.02em}
 </style>
 </head>
 <body>
@@ -416,7 +431,7 @@ a.btn{text-decoration:none}
   <path d="M150 212h212a28 28 0 0 1 28 28v88c0 74-60 116-134 116s-134-42-134-116v-88a28 28 0 0 1 28-28z" fill="url(#wkp)"/>
   <path d="M172 292h168v36c0 54-44 84-84 84s-84-30-84-84z" fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round" stroke-dasharray="24 22" opacity=".75"/>
   </svg></div>
-  <div class="tag">Tick what you did. Watch it add up until payday.<br><span style="font-size:11px;opacity:.55" id="gver">v18</span></div>
+  <div class="tag">Tick what you did. Watch it add up until payday.<br><span style="font-size:11px;opacity:.55" id="gver">v19</span></div>
   <div class="faces" id="faces"></div><div id="reg"></div></div>
 <div id="app" class="wrap hidden"><div class="hd" id="hd"></div><div id="view"></div></div>
 <div id="modal"></div>
@@ -428,7 +443,7 @@ var SEED={"config/settings": {"kids": [{"emoji": "⚡", "hue": "#00BFA6", "id": 
 <script>
 (function(){
 "use strict";
-var APPV="17";
+var APPV="19";
 var CUR="\u20AA";
 var SECTIONS=[{id:"house",label:"House",c:"var(--c2)"},{id:"personal",label:"Personal",c:"var(--c3)"},{id:"golden",label:"Golden",c:"var(--gold)"}];
 var ICONS=["i-room","i-bath","i-dish","i-kitchen","i-car","i-kid","i-game","i-news","i-music","i-phone","i-book","i-spark",
@@ -485,7 +500,7 @@ function watch(p,cb){
 
 /* ---------------- state ---------------- */
 var S={tasks:[],settings:null,ledger:{},avatars:{},sugs:[],home:null,people:{},peopleLoaded:false,who:null,
-  me:null,isParent:false,view:"home",ctx:{},sound:true,seen:0};
+  me:null,isParent:false,peek:null,view:"home",ctx:{},sound:true,seen:0};
 try{S.sound=localStorage.getItem("te4:sound")!=="0";S.seen=+(localStorage.getItem("te4:seen")||0);
   S.who=localStorage.getItem("te4:who")||null;}catch(e){}
 var DEF={kids:[{id:"k1",name:"Liv",emoji:"\u26A1",hue:"#00BFA6"},{id:"k2",name:"Yuli",emoji:"\uD83D\uDD25",hue:"#7C5CFF"}],
@@ -519,13 +534,52 @@ function isGold(e){var t=taskById(e.task);return t?t.section==="golden":!!e.gold
 function balance(k){return entries(k).reduce(function(s,e){return s+(isGold(e)?0:e.amount);},0);}
 function goldBal(k){return entries(k).reduce(function(s,e){return s+(isGold(e)?e.amount:0);},0);}
 function owedAll(k){return balance(k)+goldBal(k);}
-function wkAmt(k){return entries(k).reduce(function(s,e){return s+(wkKey(e.at)===wkKey(Date.now())?e.amount:0);},0);}
+function wkAmt(k){return weekList(k).reduce(function(s,e){return s+e.amount;},0);}
 function todayAmt(k){return entries(k).reduce(function(s,e){return s+(isToday(e.at)&&!isGold(e)?e.amount:0);},0);}
 function countTask(k,id,todayOnly){return entries(k).filter(function(e){return e.task===id&&(!todayOnly||isToday(e.at));}).length;}
 function streak(k){var days={};entries(k).forEach(function(e){days[dkey(e.at)]=1;});
   var n=0,t=Date.now();if(!days[dkey(t)])t-=86400000;
   while(days[dkey(t)]){n++;t-=86400000;}return n;}
 function kid(id){return (S.settings.kids||[]).filter(function(x){return x.id===id;})[0]||{id:id,name:id,emoji:"\u2728",hue:"#00BFA6"};}
+
+/* ---------------- payments cache + weekly board ---------------- */
+var PAY=null;
+function loadPays(){return colGet("payments").then(function(r){
+  var sig=r.map(function(x){return x.id;}).sort().join(","),was=PAY?PAY.sig:null;PAY={rows:r,sig:sig};
+  if(sig!==was&&!atGate()&&!sheetOpen()&&S.me&&S.view==="home")patchHome(S.me);return r;});}
+function paidEntries(k){var o=[];if(!PAY)return o;
+  PAY.rows.forEach(function(r){var d=r.data;if(d&&d.kid===k)(d.entries||[]).forEach(function(e){o.push(e);});});return o;}
+function paidForTask(k,id){return paidEntries(k).reduce(function(s,e){return s+(e.task===id?(e.amount||0):0);},0);}
+function owedForTask(k,id){return entries(k).reduce(function(s,e){return s+(e.task===id?e.amount:0);},0);}
+function weekList(k){var w=wkKey(Date.now()),seen={},o=[];
+  entries(k).concat(paidEntries(k)).forEach(function(e){var key=e.task+"@"+e.at;
+    if(!e.at||seen[key]||wkKey(e.at)!==w)return;seen[key]=1;o.push(e);});return o;}
+function countWeek(k,id){return weekList(k).filter(function(e){return e.task===id;}).length;}
+function secWeek(k,sec){return weekList(k).filter(function(e){var t=taskById(e.task);return t&&t.section===sec;}).reduce(function(a,e){return a+e.amount;},0);}
+function monHTML(k,t){var o=owedForTask(k,t.id),p=paidForTask(k,t.id);if(!o&&!p)return "";
+  return 'Owed <b>'+CUR+o+'</b> \u00B7 Paid '+CUR+p;}
+function forKid(t,k){return !t.only||t.only===k;}
+function tasksFor(k){return S.tasks.filter(function(t){return forKid(t,k)&&!(t.once&&t.doneBy&&t.doneBy!==k);});}
+function chipsHTML(t,k){var h="";
+  if(t.once)h+='<span class="chip once">One time</span>';
+  if(t.only)h+='<span class="chip only">'+(k&&t.only===k?"Just you":"Just "+esc(kid(t.only).name))+'</span>';
+  return h;}
+
+/* ---------------- phone alerts (ntfy) ---------------- */
+function alertTopic(){var a=S.settings&&S.settings.alerts;return (a&&a.on&&a.topic)||"";}
+function pushRaw(topic,title,msg,tags){
+  if(!topic)return;
+  var url="https://ntfy.sh/"+encodeURIComponent(topic)+"?title="+encodeURIComponent(title)+
+    (tags?"&tags="+encodeURIComponent(tags):"")+"&click="+encodeURIComponent(location.origin+location.pathname);
+  try{fetch(url,{method:"POST",mode:"no-cors",body:msg||title}).catch(function(){});}catch(e){}
+}
+function push(title,msg,tags){if(S.isParent||S.peek)return;pushRaw(alertTopic(),title,msg,tags);}
+function whoName(){return S.me?kid(S.me).name:((meP()&&meP().name)||"Someone");}
+
+/* ---------------- parent peeking at a kid's screen ---------------- */
+function peekIn(k){S.peek=k;S.isParent=false;S.me=k;S.view="home";S.ctx={};setTheme(kid(k));window.scrollTo(0,0);render();}
+function peekOut(){var k=S.peek;S.peek=null;S.isParent=true;S.me=null;S.view="review";S.ctx={kid:k,title:kid(k).name};window.scrollTo(0,0);render();}
+function lookOnly(){if(!S.peek)return false;toast("Parent view, look only");return true;}
 
 /* ---------------- trophies ---------------- */
 var TROPHIES=[
@@ -550,7 +604,7 @@ function bumpStats(k,t,e){
   if(t.section==="golden")x.gold=(x.gold||0)+1;
   if(new Date(e.at).getHours()<8)x.early=true;
   x.bestStreak=Math.max(x.bestStreak||0,streak(k));
-  var house=S.tasks.filter(function(q){return q.section==="house";}).map(function(q){return q.id;});
+  var house=tasksFor(k).filter(function(q){return q.section==="house"&&!q.once;}).map(function(q){return q.id;});
   if(house.length&&house.every(function(id){return countTask(k,id,true)>0;}))x.sweep=true;
   L.stats=x;
 }
@@ -682,6 +736,8 @@ function verify(k,id){
 function canTick(k,t){
   var last=entries(k).filter(function(e){return e.task===t.id;}).sort(function(a,b){return b.at-a.at;})[0];
   if(last&&Date.now()-last.at<4000)return {ok:false,why:"dup"};
+  if(t.once&&t.doneBy&&t.doneBy!==k)return {ok:false,why:"taken"};
+  if(t.once&&countTask(k,t.id)>0)return {ok:false,why:"once"};
   var mx=(typeof t.max==="number"&&t.max>0)?t.max:0,td=countTask(k,t.id,true);
   if(mx&&td>=mx)return {ok:false,why:"max",max:mx,today:td};
   return {ok:true};
@@ -690,6 +746,8 @@ function guardTick(k,t,go){
   var g=canTick(k,t);
   if(g.ok){go();return;}
   if(g.why==="dup"){toast("Already counted a second ago");return;}
+  if(g.why==="once"){toast("One time task, already done");return;}
+  if(g.why==="taken"){toast("Someone already did this one");return;}
   var s=sheet('<h3>Count it again?</h3><p class="note">'+esc(t.name)+' is set to '+g.max+' a day and you have done it '+
     g.today+' time'+(g.today===1?"":"s")+' today. Only count it again if you really did it again.</p>'+
     '<button class="btn" id="y">Yes, count it</button><button class="btn g" id="n">No</button>');
@@ -707,6 +765,9 @@ function addEntry(k,t){
   try{ bumpStats(k,t,e); won=checkTrophies(k); }catch(err){ logErr("trophies",err); won=[]; }
   docSet("ledger/"+k,S.ledger[k]).then(function(ok){if(ok===false)stampSave(false,"refused");else verify(k,e.id);});
   if(won.length)setTimeout(function(){try{reveal(won);refreshStrip(k);}catch(err){showErr("reveal",err);}},420);
+  if(t.once){S.tasks=S.tasks.map(function(x){return x.id===t.id?Object.assign({},x,{doneBy:k,doneAt:e.at}):x;});saveTasks();}
+  push(kid(k).name+" did "+t.name,"+"+CUR+t.amount+(t.section==="golden"?" Golden":"")+", "+CUR+owedAll(k)+" owed now",
+    t.section==="golden"?"star":"white_check_mark");
   getPos(function(p){
     if(!p)return;
     var L2=led(k),hit=(L2.entries||[]).filter(function(x){return x.id===e.id;})[0];
@@ -717,7 +778,11 @@ function addEntry(k,t){
   return e;
 }
 function removeEntry(k,id){
-  var P=led(k);
+  var P=led(k),gone=(P.entries||[]).filter(function(x){return x.id===id;})[0];
+  if(gone){var gt=taskById(gone.task);
+    if(gt&&gt.once&&gt.doneBy===k&&!(P.entries||[]).some(function(x){return x.id!==id&&x.task===gt.id;})){
+      S.tasks=S.tasks.map(function(x){if(x.id!==gt.id)return x;var c=Object.assign({},x);delete c.doneBy;delete c.doneAt;return c;});saveTasks();}
+    push(kid(k).name+" removed a tick",gone.name+", "+CUR+gone.amount+" off","x");}
   var L={kid:k,since:P.since||0,entries:(P.entries||[]).filter(function(x){return x.id!==id;}),
          updated:Date.now(),stats:thaw(P.stats)||null,trophies:thaw(P.trophies)||null};
   S.ledger[k]=L;return docSet("ledger/"+k,L);
@@ -794,12 +859,13 @@ function purgePhotos(){
   });
 }
 function addPhotoFor(k,e,cam,after){
+  if(lookOnly())return;
   pickFile(function(f){
     toast("Adding the photo");
     shrinkFit(f).then(function(u){
       if(u.length>PHOTO_CAP){toast("That photo is too big to save",true);return;}
       return docSet("photos/"+uid(),{kidId:k,entryId:e.id,taskId:e.task,img:u,at:Date.now()})
-        .then(function(ok){if(ok!==false){toast("Photo added, kept "+PHOTO_DAYS+" days");if(after)after();}
+        .then(function(ok){if(ok!==false){toast("Photo added, kept "+PHOTO_DAYS+" days");push(kid(k).name+" added a photo",e.name||"Task photo","camera");if(after)after();}
           else toast("The photo did not save",true);});
     }).catch(function(err){logErr("photo",err);toast("That photo would not load",true);});
   },cam);
@@ -835,7 +901,7 @@ function sheetTaskPhoto(t,k){
         var days=Math.max(0,PHOTO_DAYS-Math.floor((Date.now()-x.data.at)/86400000));
         var w=el('<span class="tw"><img src="'+x.data.img+'" alt=""><button>\u00D7</button></span>');
         w.title=days+" day"+(days===1?"":"s")+" left";
-        w.querySelector("button").onclick=function(){docDel("photos/"+x.id).then(function(){load();markPhotos(k);});};
+        w.querySelector("button").onclick=function(){if(lookOnly())return;docDel("photos/"+x.id).then(function(){load();markPhotos(k);});};
         box.appendChild(w);});
     });
   }
@@ -862,7 +928,7 @@ function sheetPhoto(k,e){
         var days=Math.max(0,PHOTO_DAYS-Math.floor((Date.now()-x.data.at)/86400000));
         var w=el('<span class="tw"><img src="'+x.data.img+'" alt=""><button>\u00D7</button></span>');
         w.title=days+" day"+(days===1?"":"s")+" left";
-        w.querySelector("button").onclick=function(){docDel("photos/"+x.id).then(load);};
+        w.querySelector("button").onclick=function(){if(lookOnly())return;docDel("photos/"+x.id).then(load);};
         box.appendChild(w);});
     });
   }
@@ -940,12 +1006,13 @@ function finishReg(name,role,phone,img){
   if(img){var ak=kidId||pid;S.avatars[ak]=img;docSet("avatars/"+ak,{img:img});}
   try{localStorage.setItem("te4:who",pid);}catch(e){}
   S.who=pid;REG.img=null;
+  push(name+" set up a new phone",role==="parent"?"Parent":"Kid","wave");
   watchAllKids();
   var r=document.getElementById("reg");r.removeAttribute("data-on");r.innerHTML="";
   enter(P);
 }
 function enter(p){
-  S.isParent=(p.role==="parent");
+  S.peek=null;S.isParent=(p.role==="parent");
   S.me=S.isParent?null:(p.kidId||null);
   if(!S.isParent&&!S.me){leave();return;}
   S.view=S.isParent?"parent":"home";
@@ -955,7 +1022,7 @@ function enter(p){
 }
 function leave(){
   try{localStorage.removeItem("te4:who");}catch(e){}
-  S.who=null;S.me=null;S.isParent=false;REG={role:"kid",img:null};
+  S.who=null;S.me=null;S.isParent=false;S.peek=null;REG={role:"kid",img:null};
   document.getElementById("app").classList.add("hidden");document.getElementById("gate").classList.remove("hidden");
   var r=document.getElementById("reg");r.removeAttribute("data-on");r.innerHTML="";drawGate();
 }
@@ -965,6 +1032,8 @@ function atGate(){return document.getElementById("app").classList.contains("hidd
 function render(){if(atGate()){drawGate();return;}
   if(!S.isParent&&!S.me){leave();return;}
   header();var v=document.getElementById("view");v.innerHTML="";
+  if(S.peek){var pb=el('<div class="peek"><span>You are looking at '+esc(kid(S.peek).name)+'\u2019s screen</span><button>Back to parent</button></div>');
+    pb.querySelector("button").onclick=peekOut;v.appendChild(pb);}
   ({home:vHome,history:vHistory,parent:vParent,review:vReview,tasks:vTasks,sugs:vSugs,people:vPeople,
     payments:vPayments,statement:vStatement}[S.view]||vHome)(v);}
 function header(){
@@ -979,7 +1048,7 @@ function header(){
                       emoji:S.settings.parentEmoji,hue:S.settings.parentHue,parent:true}:kid(S.me);
     var w=el('<button class="who">'+avatar(p,44)+'<div><div class="nm">'+esc(S.isParent?"Family":p.name)+'</div>'+
       '<div class="sm">'+(S.isParent?fdatel(Date.now()):("Since "+(led(S.me).since?fdate(led(S.me).since):"the start")))+'</div></div></button>');
-    w.onclick=function(){sheetProfile(p,mp);};h.appendChild(w);
+    w.onclick=S.peek?peekOut:function(){sheetProfile(p,mp);};h.appendChild(w);
     if(!S.isParent){
       var hb=el('<button class="ico" aria-label="Payments">'+svg("i-wallet")+'</button>');
       hb.onclick=function(){S.view="history";S.ctx={title:"My statement",kid:S.me};render();};h.appendChild(hb);
@@ -1039,26 +1108,27 @@ function vHome(v){
   var dash=el('<div id="kdash"></div>');v.appendChild(dash);kidDash(dash,k);
   v.appendChild(el(trophyStrip(k)));wireStrip(k);
   SECTIONS.forEach(function(sec){
-    var items=S.tasks.filter(function(t){return t.section===sec.id;});
-    var sum=entries(k).filter(function(e){var t=taskById(e.task);return t&&t.section===sec.id;}).reduce(function(s,e){return s+e.amount;},0);
+    var items=tasksFor(k).filter(function(t){return t.section===sec.id;});
     v.appendChild(el('<div class="sh" style="--secc:'+sec.c+'"><h2>'+sec.label+'</h2><span class="rule"></span>'+
-      '<span class="n" data-sum="'+sec.id+'">'+CUR+sum+'</span></div>'));
+      '<span class="n" data-sum="'+sec.id+'">'+CUR+secWeek(k,sec.id)+'<small>this week</small></span></div>'));
     if(!items.length){v.appendChild(el('<div class="empty">Nothing here yet</div>'));return;}
     if(sec.id==="golden"){items.forEach(function(t){v.appendChild(goldCard(t,k));});v.appendChild(el('<div style="height:10px"></div>'));return;}
     var p=el('<div class="panel"></div>');items.forEach(function(t){p.appendChild(taskRow(t,k));});v.appendChild(p);
   });
   var b0=el('<button class="btn g">My ticks and photos</button>');b0.onclick=function(){sheetTicks(k);};v.appendChild(b0);
   var bd=el('<button class="btn g">Something is wrong, copy details</button>');bd.onclick=copyDiag;v.appendChild(bd);
-  var b=el('<button class="btn g">Suggest a task</button>');b.onclick=sheetSuggest;v.appendChild(b);
+  if(!S.peek){var b=el('<button class="btn g">Suggest a task</button>');b.onclick=sheetSuggest;v.appendChild(b);}
   markPhotos(k);
-  v.appendChild(el('<div class="foot">Tap a task every time you do it, or tap the camera to show us.<br>'+
+  v.appendChild(el('<div class="foot">Tap a task every time you do it, or tap the camera to show us. The ticks start fresh every Sunday, your money stays until payday.<br>'+
     '<span id="diag" style="font-size:11px;opacity:.75">'+diagHTML()+'</span></div>'));
 }
+function rowMon(k,t){return chipsHTML(t,k)+(chipsHTML(t,k)&&monHTML(k,t)?" ":"")+monHTML(k,t);}
+function nmHTML(t,k,td){return esc(t.name)+(td?'<span class="today">'+(td>1?td+" today":"today")+'</span>':'');}
 function rowInner(t,k){
-  var n=countTask(k,t.id),td=countTask(k,t.id,true),b=bandN(t);
+  var n=countWeek(k,t.id),td=countTask(k,t.id,true),b=bandN(t);
   return '<span class="tile"><i class="k'+b+'">'+svg(t.icon||"i-star")+'</i></span>'+
-    '<span class="body"><span class="mid"><span class="nm">'+esc(t.name)+(td?'<span class="today">'+(td>1?td+" today":"today")+'</span>':'')+'</span>'+
-    (t.note?'<span class="sub">'+esc(t.note)+'</span>':'')+'</span>'+
+    '<span class="body"><span class="mid"><span class="nm">'+nmHTML(t,k,td)+'</span>'+
+    (t.note?'<span class="sub">'+esc(t.note)+'</span>':'')+'<span class="mon">'+rowMon(k,t)+'</span></span>'+
     '<span class="val">'+CUR+t.amount+'</span><span class="tick">'+(n>0?(n>1?n:svg("i-check")):"")+'</span></span>'+
     '<button class="cam2" aria-label="Photo of '+esc(t.name)+'">'+svg("i-cam")+'</button>'+
     '<button class="hit" aria-label="'+esc(t.name)+', '+CUR+t.amount+'"></button>';
@@ -1066,7 +1136,7 @@ function rowInner(t,k){
 function wireRow(row,t,k){
   var hit=row.querySelector(".hit"),timer=null,held=false;
   var cm=row.querySelector(".cam2");
-  if(cm)cm.onclick=function(ev){ev.stopPropagation();sheetTaskPhoto(t,k);};
+  if(cm)cm.onclick=function(ev){ev.stopPropagation();if(lookOnly())return;sheetTaskPhoto(t,k);};
   function start(){held=false;clearTimeout(timer);timer=setTimeout(function(){held=true;sheetTask(t,k);},480);}
   function stop(){clearTimeout(timer);}
   hit.addEventListener("pointerdown",start);
@@ -1075,6 +1145,7 @@ function wireRow(row,t,k){
   hit.addEventListener("pointerleave",function(){stop();});
   hit.onclick=function(){
     if(held){held=false;return;}
+    if(lookOnly())return;
     guardTick(k,t,function(){
     var before;
     try{ before=owedAll(k); addEntry(k,t); }
@@ -1088,27 +1159,29 @@ function wireRow(row,t,k){
     });
   };
 }
-function taskRow(t,k){var n=countTask(k,t.id);var row=el('<div class="t'+(n>0?" on b"+bandN(t):"")+'" data-t="'+t.id+'">'+rowInner(t,k)+'</div>');wireRow(row,t,k);return row;}
+function taskRow(t,k){var n=countWeek(k,t.id);var row=el('<div class="t'+(n>0?" on b"+bandN(t):"")+'" data-t="'+t.id+'">'+rowInner(t,k)+'</div>');wireRow(row,t,k);return row;}
 function refreshRow(t,k,anim){
   var row=document.querySelector('[data-t="'+t.id+'"]');if(!row)return;
-  var n=countTask(k,t.id),td=countTask(k,t.id,true),sig=n+"/"+td;
+  var n=countWeek(k,t.id),td=countTask(k,t.id,true),sig=n+"/"+td;
   if(row.getAttribute("data-sig")!==sig){
     row.setAttribute("data-sig",sig);
     row.className="t"+(n>0?" on b"+bandN(t):"");
     /* never replace the row's children: the tap target must survive a tick */
     var tk=row.querySelector(".tick");if(tk)tk.innerHTML=n>0?(n>1?String(n):svg("i-check")):"";
     var nm=row.querySelector(".nm");
-    if(nm)nm.innerHTML=esc(t.name)+(td?'<span class="today">'+(td>1?td+" today":"today")+'</span>':'');
+    if(nm)nm.innerHTML=nmHTML(t,k,td);
   }
+  var mo=row.querySelector(".mon");if(mo)mo.innerHTML=rowMon(k,t);
   if(anim){var ti=row.querySelector(".tile i");if(ti){ti.classList.add("pop");setTimeout(function(){ti.classList.remove("pop");},420);}}
   SECTIONS.forEach(function(s){var e=document.querySelector('[data-sum="'+s.id+'"]');if(!e)return;
-    e.textContent=CUR+entries(k).filter(function(x){var tt=taskById(x.task);return tt&&tt.section===s.id;}).reduce(function(a,x){return a+x.amount;},0);});
+    e.innerHTML=CUR+secWeek(k,s.id)+'<small>this week</small>';});
 }
 function wireStrip(k){each(document.querySelectorAll("#tstrip .tm"),function(b){b.onclick=function(){sheetTrophies(k);};});}
 function refreshStrip(k){var o=document.getElementById("tstrip");if(!o)return;o.outerHTML=trophyStrip(k);wireStrip(k);}
 function patchHome(k){
-  S.tasks.forEach(function(t){if(t.section==="golden"){var g=document.querySelector('.gold[data-t="'+t.id+'"]');
-      if(g&&g.getAttribute("data-n")!==String(countTask(k,t.id)))g.replaceWith(goldCard(t,k));}
+  tasksFor(k).forEach(function(t){if(t.section==="golden"){var g=document.querySelector('.gold[data-t="'+t.id+'"]');
+      if(g&&g.getAttribute("data-n")!==String(countTask(k,t.id)))g.replaceWith(goldCard(t,k));
+      else if(g){var gm=g.querySelector(".gmon");if(gm)gm.innerHTML=monHTML(k,t);}}
     else refreshRow(t,k,false);});
   refreshHero();refreshStrip(k);markPhotos(k);
 }
@@ -1117,13 +1190,14 @@ function refreshHero(from){var h=document.getElementById("hero");if(!h||!S.me)re
 function goldCard(t,k){
   var n=countTask(k,t.id);
   var c=el('<div class="gold'+(n>0?" on":"")+'" data-t="'+t.id+'" data-n="'+n+'"><button class="gt"><span class="gtile">'+svg(t.icon||"i-spark")+'</span>'+
-    '<span><h3>'+esc(t.name)+'</h3>'+(t.note?'<p>'+esc(t.note)+'</p>':'')+'</span></button>'+
+    '<span><h3>'+esc(t.name)+chipsHTML(t,k)+'</h3>'+(t.note?'<p>'+esc(t.note)+'</p>':'')+'<p class="gmon">'+monHTML(k,t)+'</p></span></button>'+
     '<div class="gf"><span class="gv">'+CUR+t.amount+'</span>'+
     '<button class="gcam" aria-label="Photo of '+esc(t.name)+'">'+svg("i-cam")+'</button>'+
     '<button class="gb">'+(n>0?"Claimed"+(n>1?" \u00D7"+n:""):"Claim it")+'</button></div></div>');
   c.querySelector(".gt").onclick=function(){sheetTask(t,k);};
-  c.querySelector(".gcam").onclick=function(ev){ev.stopPropagation();sheetTaskPhoto(t,k);};
+  c.querySelector(".gcam").onclick=function(ev){ev.stopPropagation();if(lookOnly())return;sheetTaskPhoto(t,k);};
   c.querySelector(".gb").onclick=function(){
+    if(lookOnly())return;
     guardTick(k,t,function(){
       var before;
       try{ before=owedAll(k); addEntry(k,t); }catch(err){ showErr("claim",err); return; }
@@ -1157,18 +1231,18 @@ function sheetTask(t,k){
   var mine=entries(k).filter(function(e){return e.task===t.id;}).sort(function(a,b){return b.at-a.at;});
   var s=sheet('<h3>'+esc(t.name)+'</h3><p class="note">'+esc(t.note||"Tap it on the board every time you do it.")+'</p>'+
     '<div class="kv"><i class="k'+(bandN(t)||1)+'" style="background:rgba(0,0,0,.04)">'+svg(t.icon||"i-star")+'</i>'+
-    '<div><div class="kvv">'+CUR+t.amount+' each time</div><div class="kvs">'+(mine.length?mine.length+" since payday, "+CUR+(mine.length*t.amount)+" so far":"Not done yet since payday")+'</div></div></div>'+
+    '<div><div class="kvv">'+CUR+t.amount+' each time</div><div class="kvs">'+(mine.length?mine.length+" since payday, "+CUR+owedForTask(k,t.id)+" owed":"Not done yet since payday")+(paidForTask(k,t.id)?", "+CUR+paidForTask(k,t.id)+" paid before":"")+'</div></div></div>'+
     '<div class="panel" id="el" style="margin-bottom:14px"></div>'+
     '<div class="thumbs" id="ph"></div>'+
     '<p class="note" style="margin:0 0 10px">Photos attach to a single tick. Use the camera button on the tick you want.</p>'+
     '<button class="btn" id="cl">Done</button>');
   var list=s.querySelector("#el");
   if(!mine.length)list.outerHTML='';
-  else mine.forEach(function(e){list.appendChild(entryRow(e,k,true,function(){refreshRow(t,k);refreshHero();}));});
+  else mine.forEach(function(e){list.appendChild(entryRow(e,k,!S.peek,function(){refreshRow(t,k);refreshHero();}));});
   var box=s.querySelector("#ph");
   photosOf(k).then(function(r){r.filter(function(x){return x.data.taskId===t.id;}).forEach(function(x){
     var w=el('<span class="tw"><img src="'+x.data.img+'" alt=""><button>\u00D7</button></span>');
-    w.querySelector("button").onclick=function(){docDel("photos/"+x.id).then(function(){w.remove();});};box.appendChild(w);});});
+    w.querySelector("button").onclick=function(){if(lookOnly())return;docDel("photos/"+x.id).then(function(){w.remove();});};box.appendChild(w);});});
   s.querySelector("#cl").onclick=close_;
 }
 function sheetTicks(k){
@@ -1178,7 +1252,7 @@ function sheetTicks(k){
   var box=s.querySelector("#tk"),cur=null,panel=null;
   es.forEach(function(e){var dl=dayLabel(e.at);
     if(dl!==cur){cur=dl;box.appendChild(el('<div class="dayh">'+dl+'</div>'));panel=el('<div class="panel"></div>');box.appendChild(panel);}
-    panel.appendChild(entryRow(e,k,true,function(){var t=taskById(e.task);if(t)refreshRow(t,k);refreshHero();}));});
+    panel.appendChild(entryRow(e,k,!S.peek,function(){var t=taskById(e.task);if(t)refreshRow(t,k);refreshHero();}));});
   s.querySelector("#cl").onclick=close_;
 }
 function sheetSuggest(){
@@ -1188,11 +1262,19 @@ function sheetSuggest(){
     '<div class="fld"><label>What counts as done</label><input id="s-d" placeholder="Every plant, inside and on the balcony"></div>'+
     '<div class="two"><div class="fld"><label>Where it belongs</label><select id="s-s">'+o+'</select></div>'+
     '<div class="fld"><label>Worth '+CUR+'</label><input id="s-a" type="number" inputmode="numeric" value="10"></div></div>'+
+    '<div class="fld"><label>How often</label><div class="roles" id="s-o"><button data-v="reg" class="sel">Regular</button><button data-v="once">One time</button></div></div>'+
+    '<div class="fld"><label>Who is it for</label><div class="roles" id="s-w"><button data-v="all" class="sel">Everyone</button><button data-v="me">Just me</button></div></div>'+
     '<button class="btn" id="go">Send it</button><button class="btn g" id="cx">Cancel</button>');
+  var how="reg",who="all";
+  function tog(id,set){each(s.querySelectorAll(id+" button"),function(b){b.onclick=function(){
+    each(s.querySelectorAll(id+" button"),function(x){x.classList.remove("sel");});b.classList.add("sel");set(b.getAttribute("data-v"));};});}
+  tog("#s-o",function(v){how=v;});tog("#s-w",function(v){who=v;});
   s.querySelector("#cx").onclick=close_;
   s.querySelector("#go").onclick=function(){var n=s.querySelector("#s-n").value.trim();if(!n){toast("Give it a name first");return;}
     docSet("sugs/"+uid(),{by:S.me,name:n,note:s.querySelector("#s-d").value.trim(),section:s.querySelector("#s-s").value,
-      amount:Math.max(0,parseInt(s.querySelector("#s-a").value,10)||0),at:Date.now()});close_();toast("Sent to your parents");};
+      amount:Math.max(0,parseInt(s.querySelector("#s-a").value,10)||0),once:how==="once",only:who==="me"?S.me:null,at:Date.now()});
+    push(kid(S.me).name+" suggested a task",n+", "+CUR+(Math.max(0,parseInt(s.querySelector("#s-a").value,10)||0))+(how==="once"?", one time":", regular")+(who==="me"?", just for her":", for everyone"),"bulb");
+    close_();toast("Sent to your parents");};
 }
 
 /* ---------- statement ---------- */
@@ -1330,8 +1412,7 @@ function vParent(v){
   parentPaid(v,ids);
   v.appendChild(el('<div class="sh" style="--secc:var(--c2)"><h2>Just happened</h2><span class="rule"></span></div>'));
   var f=el('<div class="panel" id="feed"></div>');v.appendChild(f);paintFeed();
-  if(("Notification" in window)&&Notification.permission!=="granted"){var a=el('<button class="btn g">Turn on alerts on this phone</button>');a.onclick=askAlerts;v.appendChild(a);}
-  v.appendChild(el('<div class="foot" style="margin:-6px 0 14px">Alerts only arrive while Dmei-Kiss is open on this phone. The summary below is the reliable one.</div>'));
+  var al=el('<button class="btn '+(alertTopic()?"g":"au")+'">'+(alertTopic()?"Phone alerts are on":"Turn on phone alerts")+'</button>');al.onclick=sheetAlerts;v.appendChild(al);
   var bsum=el('<button class="btn g">Send today\u2019s summary</button>');bsum.onclick=shareToday;v.appendChild(bsum);
   var n=S.sugs.length;
   var b1=el('<button class="btn g">Task ideas from the kids'+(n?'<span class="chip new">'+n+'</span>':'')+'</button>');b1.onclick=function(){S.view="sugs";S.ctx={title:"Task ideas"};render();};v.appendChild(b1);
@@ -1405,6 +1486,7 @@ function vReview(v){
     rows.forEach(function(r){var task=taskById(r.data.taskId);var w=el('<span class="tw"><img src="'+r.data.img+'" alt=""></span>');
       w.onclick=function(){var sh=sheet('<h3>'+esc(task?task.name:"Photo")+'</h3><img src="'+r.data.img+'" style="width:100%;border-radius:16px" alt=""><button class="btn" id="cl">Close</button>');sh.querySelector("#cl").onclick=close_;};
       pv.appendChild(w);});});
+  var pk=el('<button class="btn g">Open '+esc(K.name)+'\u2019s screen</button>');pk.onclick=function(){peekIn(k);};v.appendChild(pk);
   var stb=el('<button class="btn g">'+esc(K.name)+'\u2019s statement</button>');
   stb.onclick=function(){S.view="statement";S.ctx={kid:k,title:K.name+"\u2019s statement"};render();};v.appendChild(stb);
   var pay=el('<button class="btn au">Pay '+CUR+b+' to '+esc(K.name)+'</button>');pay.onclick=function(){payout(k);};v.appendChild(pay);
@@ -1421,7 +1503,11 @@ function payout(k){
     docSet("payments/"+pid,{kid:k,amount:a+g,allowance:a,golden:g,count:n,from:L.since||0,at:now,
       entries:(L.entries||[]).map(function(e){return {task:e.task,name:e.name,amount:e.amount,at:e.at};})})
       .then(function(){S.ledger[k]={kid:k,entries:[],since:now,updated:now,stats:L.stats||null,trophies:L.trophies||null};return docSet("ledger/"+k,S.ledger[k]);})
-      .then(function(){close_();S.view="parent";setTheme({hue:"#FFB020"});render();coin(true);
+      .then(function(){
+        var fin=S.tasks.filter(function(t){return t.once&&t.doneBy===k;});
+        if(fin.length){S.tasks=S.tasks.filter(function(t){return !(t.once&&t.doneBy===k);});saveTasks();}
+        loadPays();
+        close_();S.view="parent";setTheme({hue:"#FFB020"});render();coin(true);
         burst(innerWidth/2,innerHeight*0.35,["#FFB020","#0FB981","#7C5CFF","#FF4D8D","#fff"],true);
         var msg=K.name+", paid "+CUR+(a+g)+" on "+fdate(now)+" for "+n+" task"+(n===1?"":"s")+(g?" (incl. "+CUR+g+" Golden)":"")+". Dmei-Kiss";
         var per=personForKid(k),num=per&&per.phone?String(per.phone).replace(/[^0-9]/g,""):"";
@@ -1447,14 +1533,39 @@ function sheetHome(){
   if(s.querySelector("#clr"))s.querySelector("#clr").onclick=function(){S.home=null;docDel("config/home").then(function(){close_();render();});};
 }
 
+function sheetAlerts(){
+  var a=(S.settings&&S.settings.alerts)||{};
+  var topic=a.topic||("dmeikiss-"+Math.random().toString(36).slice(2,7)+Math.random().toString(36).slice(2,7));
+  var on=!!(a.on&&a.topic);
+  var s=sheet('<h3>Phone alerts</h3><p class="note">Your phone buzzes every time the girls tick a task, claim a Golden one, remove a tick, add a photo or suggest a task. It works even when Dmei-Kiss is closed.</p>'+
+    '<p class="note">1. Install the free <b>ntfy</b> app from the App Store or Google Play.<br>2. In ntfy tap <b>+</b> and subscribe to the code below. Pili can do the same on her phone.<br>3. Press '+(on?'Send a test':'Turn on')+' here.</p>'+
+    '<div class="fld"><label>Alert code</label><input id="a-t" class="code" readonly value="'+esc(topic)+'"></div>'+
+    '<button class="btn g" id="cp">Copy the code</button>'+
+    (on?'<button class="btn" id="ts">Send a test</button><button class="btn d" id="off">Turn alerts off</button>':'<button class="btn au" id="go">Turn on</button>')+
+    '<button class="btn g" id="cl">Close</button>'+
+    '<p class="note" style="margin-top:14px;font-size:12.5px">Keep the code in the family, anyone who has it can read the alerts.</p>');
+  s.querySelector("#cl").onclick=close_;
+  s.querySelector("#cp").onclick=function(){try{navigator.clipboard.writeText(topic);toast("Copied");}catch(e){s.querySelector("#a-t").select();}};
+  if(s.querySelector("#go"))s.querySelector("#go").onclick=function(){
+    var st=editSettings();st.alerts={topic:topic,on:true};saveSettings();
+    pushRaw(topic,"Dmei-Kiss alerts are on","You will hear about every tick from now on.","tada");
+    close_();render();toast("Alerts on, a test is on its way");};
+  if(s.querySelector("#ts"))s.querySelector("#ts").onclick=function(){pushRaw(topic,"Test from Dmei-Kiss","If you can read this, alerts work.","bell");toast("Test sent");};
+  if(s.querySelector("#off"))s.querySelector("#off").onclick=function(){var st=editSettings();st.alerts={topic:topic,on:false};saveSettings();close_();render();toast("Alerts off");};
+}
+
 /* ---------- suggestions / tasks / people ---------- */
 function vSugs(v){
   if(!S.sugs.length){v.appendChild(el('<div class="empty">No ideas waiting. They can pitch one from their own screen.</div>'));return;}
   S.sugs.slice().sort(function(a,b){return b.data.at-a.data.at;}).forEach(function(r){var d=r.data;
-    var c=el('<div class="sug"><div class="by">'+esc(kid(d.by).name)+' suggested, worth '+CUR+d.amount+'</div><div class="nm">'+esc(d.name)+'</div>'+
+    var c=el('<div class="sug"><div class="by">'+esc(kid(d.by).name)+' suggested, worth '+CUR+d.amount+'</div><div class="nm">'+esc(d.name)+
+      '<span class="chip '+(d.once?"once":"done")+'">'+(d.once?"One time":"Regular")+'</span>'+
+      '<span class="chip only">'+(d.only?"Just "+esc(kid(d.only).name):"Everyone")+'</span></div>'+
       (d.note?'<div class="no">'+esc(d.note)+'</div>':'')+'<div class="ac"><button class="yes">Add it</button><button class="no2">Not this one</button></div></div>');
-    c.querySelector(".yes").onclick=function(){docDel("sugs/"+r.id);S.sugs=S.sugs.filter(function(x){return x.id!==r.id;});
-      sheetEdit({id:"t"+uid(),name:d.name,note:d.note,section:d.section,amount:d.amount,icon:"i-star"},true);};
+    c.querySelector(".yes").onclick=function(){
+      var nt={id:"t"+uid(),name:d.name,note:d.note,section:d.section,amount:d.amount,icon:"i-star",max:d.once?0:1};
+      if(d.once)nt.once=true;if(d.only)nt.only=d.only;
+      sheetEdit(nt,true,function(){docDel("sugs/"+r.id);S.sugs=S.sugs.filter(function(x){return x.id!==r.id;});toast("On the board");});};
     c.querySelector(".no2").onclick=function(){docDel("sugs/"+r.id);S.sugs=S.sugs.filter(function(x){return x.id!==r.id;});render();toast("Turned down");};
     v.appendChild(c);});
 }
@@ -1464,15 +1575,17 @@ function vTasks(v){
     if(!items.length){v.appendChild(el('<div class="empty">Nothing here</div>'));return;}
     var p=el('<div class="panel"></div>');
     items.forEach(function(t){var b=bandN(t)||1;
-      var lim=(typeof t.max==="number"&&t.max>0)?t.max+' a day':'no daily limit';
-      var row=el('<div class="t"><span class="tile"><i class="k'+b+'">'+svg(t.icon||"i-star")+'</i></span><span class="body"><span class="mid"><span class="nm">'+esc(t.name)+'</span>'+
-        '<span class="sub">'+lim+(t.note?' \u00B7 '+esc(t.note):'')+'</span></span><span class="val">'+CUR+t.amount+'</span></span><button class="hit"></button></div>');
+      var lim=t.once?(t.doneBy?'done by '+esc(kid(t.doneBy).name)+', goes after payday':'waiting to be done'):((typeof t.max==="number"&&t.max>0)?t.max+' a day':'no daily limit');
+      var row=el('<div class="t"><span class="tile"><i class="k'+b+'">'+svg(t.icon||"i-star")+'</i></span><span class="body"><span class="mid"><span class="nm">'+esc(t.name)+chipsHTML(t,null)+'</span>'+
+        '<span class="sub">'+lim+(t.note?' \u00B7 '+esc(t.note):'')+'</span></span><span class="val">'+CUR+t.amount+'</span></span><span class="edt">\u270E</span><button class="hit" aria-label="Change '+esc(t.name)+'"></button></div>');
       row.querySelector(".hit").onclick=function(){sheetEdit(t,false);};p.appendChild(row);});
     v.appendChild(p);});
+  v.insertBefore(el('<div class="foot" style="margin:0 0 6px">Tap any task to change its name, price, who it is for, or delete it.</div>'),v.firstChild);
   var b=el('<button class="btn">Add a task</button>');b.onclick=function(){sheetEdit(null,true);};v.appendChild(b);
 }
-function sheetEdit(t,isNew){
+function sheetEdit(t,isNew,onSaved){
   t=t||{id:"t"+uid(),name:"",section:"house",amount:5,note:"",icon:"i-star"};
+  var wo='<option value="">Everyone</option>'+(S.settings.kids||[]).map(function(x){return '<option value="'+x.id+'"'+(t.only===x.id?" selected":"")+'>Just '+esc(x.name)+'</option>';}).join("");
   var o=SECTIONS.map(function(x){return '<option value="'+x.id+'"'+(t.section===x.id?" selected":"")+'>'+x.label+'</option>';}).join("");
   var pk=ICONS.map(function(i){return '<button data-i="'+i+'"'+(t.icon===i?' class="sel"':'')+'>'+svg(i)+'</button>';}).join("");
   var s=sheet('<h3>'+(isNew?"New task":"Edit task")+'</h3>'+
@@ -1480,6 +1593,9 @@ function sheetEdit(t,isNew){
     '<div class="fld"><label>What counts as done</label><input id="f-d" value="'+esc(t.note||"")+'" placeholder="Surfaces clean, laundry not included"></div>'+
     '<div class="two"><div class="fld"><label>Section</label><select id="f-s">'+o+'</select></div>'+
     '<div class="fld"><label>Amount '+CUR+' each time</label><input id="f-a" type="number" inputmode="numeric" value="'+t.amount+'"></div></div>'+
+    (isNew?'':'<p class="note" style="margin:-4px 0 13px;font-size:12.5px">A new amount counts from the next tick. Ticks already done keep what they were worth.</p>')+
+    '<div class="two"><div class="fld"><label>How often</label><select id="f-o"><option value="reg">Regular</option><option value="once"'+(t.once?" selected":"")+'>One time</option></select></div>'+
+    '<div class="fld"><label>Who can do it</label><select id="f-w">'+wo+'</select></div></div>'+
     '<div class="fld"><label>Times a day (0 for no limit)</label><input id="f-m" type="number" inputmode="numeric" value="'+(t.max==null?1:t.max)+'"></div>'+
     '<div class="fld"><label>Icon</label><div class="pick" id="f-i">'+pk+'</div></div>'+
     '<button class="btn" id="sv">Save</button>'+(isNew?'':'<button class="btn d" id="dl">Delete task</button>')+'<button class="btn g" id="cx">Cancel</button>');
@@ -1489,9 +1605,11 @@ function sheetEdit(t,isNew){
   s.querySelector("#sv").onclick=function(){var n=s.querySelector("#f-n").value.trim();if(!n){toast("Give it a name first");return;}
     t.name=n;t.note=s.querySelector("#f-d").value.trim();t.section=s.querySelector("#f-s").value;t.amount=Math.max(0,parseInt(s.querySelector("#f-a").value,10)||0);t.icon=chosen;
     t.max=Math.max(0,parseInt(s.querySelector("#f-m").value,10)||0);
+    if(s.querySelector("#f-o").value==="once")t.once=true;else{delete t.once;delete t.doneBy;delete t.doneAt;}
+    var w=s.querySelector("#f-w").value;if(w)t.only=w;else delete t.only;
     if(S.tasks.filter(function(x){return x.id===t.id;}).length)S.tasks=S.tasks.map(function(x){return x.id===t.id?t:x;});
     else S.tasks=S.tasks.concat([t]);
-    saveTasks();close_();S.view="tasks";S.ctx={title:"Tasks"};render();};
+    saveTasks();close_();if(onSaved)onSaved();S.view="tasks";S.ctx={title:"Tasks"};render();};
   if(s.querySelector("#dl"))s.querySelector("#dl").onclick=function(){S.tasks=S.tasks.filter(function(x){return x.id!==t.id;});saveTasks();close_();render();toast("Deleted");};
 }
 function faceOf(per){
@@ -1577,7 +1695,8 @@ function watchKid(k){
     if(same(next,cur))return;
     var fresh=(next.entries||[]).filter(function(e){return e.at>S.seen&&!(cur&&(cur.entries||[]).some(function(o){return o.id===e.id;}));});
     S.ledger[k]=next;
-    if(S.isParent){if(S.view==="parent"){paintFeed();markSeen();}header();fresh.forEach(function(e){notify(k,e);});if(S.view==="review"&&!sheetOpen())render();}
+    if(S.isParent||S.peek)fresh.forEach(function(e){notify(k,e);});
+    if(S.isParent){if(S.view==="parent"){paintFeed();markSeen();}header();if(S.view==="review"&&!sheetOpen())render();}
     else if(S.me===k){if(sheetOpen())return;if(S.view==="home")patchHome(k);else render();}
   });
   watch("avatars/"+k,function(d){var img=(d&&d.img)||null;if(img===(S.avatars[k]||null))return;if(img)S.avatars[k]=img;else delete S.avatars[k];softRender();});
@@ -1637,6 +1756,7 @@ function boot(){
     refreshPeople().then(function(){if(atGate())drawGate();});
     purgePhotos();setTimeout(purgePhotos,6000);setInterval(purgePhotos,1800000);
     refreshSugs();setInterval(refreshSugs,25000);
+    loadPays();setInterval(loadPays,60000);
     setInterval(function(){if(S.isParent)refreshPeople();},30000);
     setInterval(function(){if(S.isParent&&S.view==="parent")paintFeed();},60000);
   });
