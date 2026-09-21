@@ -1,5 +1,5 @@
 /* Dmei-Kiss service worker. Bump CACHE on every deploy so phones pick up the new build. */
-var CACHE = "dmeikiss-v18";
+var CACHE = "dmeikiss-v19";
 var SHELL = ["./","./index.html","./manifest.webmanifest","./icon-192.png","./icon-512.png","./icon-180.png","./icon-32.png"];
 
 self.addEventListener("install", function(e){
